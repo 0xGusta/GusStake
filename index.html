@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gus Stake</title>
+  <link rel="icon" href="/MonadStake/images/icon.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.5/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-cookie@3.0.5/dist/js.cookie.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap');
+    body {
+      font-family: 'Montserrat', sans-serif;
+      background: linear-gradient(45deg, #161616, #7100da);
+      background-size: 200% 200%;
+      animation: gradientAnimation 5s ease infinite;
+    }
+    @keyframes gradientAnimation {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .background-logo {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.1;
+      z-index: -1;
+      width: 500px;
+      height: 500px;
+    }
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid #60A5FA;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .custom-button {
+      background: linear-gradient(45deg, #6B46C1, #60A5FA);
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      color: white;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+      touch-action: manipulation;
+    }
+    .custom-button:hover:not(:disabled) {
+      transform: scale(1.05);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    .custom-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .tab-button {
+      padding: 0.5rem 1.5rem;
+      border-radius: 0.5rem;
+      color: white;
+      font-weight: 600;
+      transition: background-color 0.2s, transform 0.2s;
+      touch-action: manipulation;
+    }
+    .tab-button.active {
+      background: linear-gradient(45deg, #6B46C1, #60A5FA);
+    }
+    .tab-button.inactive {
+      background-color: #4B5563;
+    }
+    .tab-button:hover {
+      transform: scale(1.05);
+    }
+    .popup-success {
+      background: linear-gradient(45deg, #6B46C1, #60A5FA);
+    }
+    .popup-error {
+      background-color: #7F1D1D;
+    }
+    .popup-button {
+      touch-action: manipulation;
+    }
+    .popup-button:hover {
+      background: linear-gradient(45deg, #6B46C1, #60A5FA);
+      color: white;
+    }
+    .mobile-menu {
+      transition: transform 0.3s ease-in-out;
+    }
+    .mobile-menu.open {
+      transform: translateX(0);
+    }
+    .mobile-menu.closed {
+      transform: translateX(100%);
+    }
+    input {
+      transition: none !important;
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col">
+  <div id="root" className="flex-grow"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef, memo, useMemo } = React;
+
+    const CONTRACT_ADDRESS = "0x0E06F432eAA3978FE833Bb8BBcF1b6580F91BdaF";
+    const MONAD_RPC = "https://testnet-rcp.monad.xyz";
+    const MONAD_CHAIN_ID = "10143";
+    const CONTRACT_ABI = [
+      "function stake() external payable",
+      "function unstake(uint256 stgMonAmount) external",
+      "function balanceOf(address account) view returns (uint256)",
+      "event Staked(address indexed user, uint256 monAmount, uint256 stgMonAmount)",
+      "event Unstaked(address indexed user, uint256 stgMonAmount, uint256 monAmount)"
+    ];
+
+    const translations = {
+      pt: {
+        title: "Gus Stake",
+        connectWallet: "Conectar Carteira",
+        disconnectWallet: "Desconectar Carteira",
+        connected: "Conectado: {address}",
+        monBalance: "{balance} MON",
+        stgMonBalance: "{balance} stgMON",
+        contractMonBalance: "TVL: {balance} MON",
+        stakeTitle: "Depósito",
+        stakePlaceholder: "Quantidade em MON",
+        stakeButton: "Fazer Depósito",
+        unstakeTitle: "Saque",
+        unstakePlaceholder: "Quantidade em stgMON",
+        unstakeButton: "Fazer Saque",
+        addStgMon: "Adicionar stgMON ao Metamask",
+        metamaskOnly: "Apenas Metamask é suportado",
+        switchNetworkMessage: "Por favor, mude para a Monad Testnet (Chain ID: 10143)",
+        installMetamask: "Por favor, instale o Metamask",
+        failedConnect: "Falha ao conectar carteira",
+        failedSign: "Falha ao assinar mensagem",
+        failedContract: "Falha ao inicializar contrato",
+        failedBalances: "Falha ao obter saldos",
+        invalidStake: "Quantidade de depósito inválida: insira um número maior que 0",
+        invalidStakeFormat: "Formato inválido: use apenas números (ex.: 1.0)",
+        invalidUnstake: "Quantidade de saque inválida: insira um número maior que 0",
+        insufficientMon: "Você não tem MON suficiente para este depósito",
+        insufficientStgMon: "Você não tem stgMON suficiente para este saque",
+        stakeSuccess: "Depósito de {amount} MON realizado com sucesso",
+        unstakeSuccess: "Saque de {amount} stgMON realizado com sucesso",
+        stakeFailed: "Transação de depósito falhou",
+        unstakeFailed: "Transação de saque falhou",
+        addNetworkFailed: "Falha ao adicionar Monad Testnet",
+        switchNetworkFailed: "Falha ao mudar para Monad Testnet",
+        addStgMonFailed: "Falha ao adicionar stgMON ao Metamask",
+        close: "Fechar",
+        language: "Idioma",
+        developedBy: "Desenvolvido por ",
+        contractAddress: "Endereço do contrato",
+        welcomeMessage: "Bem-vindo ao Gus Stake! Por favor, assine para autenticar.",
+        walletConnected: "Carteira conectada com sucesso",
+        transactionHistory: "Histórico de Transações",
+        noTransactions: "Nenhuma transação encontrada",
+        stakeType: "Depósito",
+        unstakeType: "Saque",
+        stakeConversion: "Você receberá: {amount} stgMON",
+        unstakeConversion: "Você receberá: {amount} MON",
+        cookieConsent: "Este site usa cookies para melhorar sua experiência. Aceita?",
+        acceptCookies: "Aceitar",
+        declineCookies: "Recusar"
+      },
+      es: {
+        title: "Gus Stake",
+        connectWallet: "Conectar Billetera",
+        disconnectWallet: "Desconectar Billetera",
+        connected: "Conectado: {address}",
+        monBalance: "{balance} MON",
+        stgMonBalance: "{balance} stgMON",
+        contractMonBalance: "TVL: {balance} MON",
+        stakeTitle: "Depósito",
+        stakePlaceholder: "Cantidad en MON",
+        stakeButton: "Hacer Depósito",
+        unstakeTitle: "Retiro",
+        unstakePlaceholder: "Cantidad en stgMON",
+        unstakeButton: "Hacer Retiro",
+        addStgMon: "Agregar stgMON a Metamask",
+        metamaskOnly: "Solo se soporta Metamask",
+        switchNetworkMessage: "Por favor, cambia a Monad Testnet (Chain ID: 10143)",
+        installMetamask: "Por favor, instala Metamask",
+        failedConnect: "Error al conectar billetera",
+        failedSign: "Error al firmar mensaje",
+        failedContract: "Error al inicializar contrato",
+        failedBalances: "Error al obtener saldos",
+        invalidStake: "Cantidad de depósito inválida: ingrese un número mayor que 0",
+        invalidStakeFormat: "Formato inválido: use solo números (ej.: 1.0)",
+        invalidUnstake: "Cantidad de retiro inválida: ingrese un número mayor que 0",
+        insufficientMon: "No tienes suficiente MON para este depósito",
+        insufficientStgMon: "No tienes suficiente stgMON para este retiro",
+        stakeSuccess: "Depósito de {amount} MON realizado con éxito",
+        unstakeSuccess: "Retiro de {amount} stgMON realizado con éxito",
+        stakeFailed: "Transacción de depósito falló",
+        unstakeFailed: "Transacción de retiro falló",
+        addNetworkFailed: "Error al agregar Monad Testnet",
+        switchNetworkFailed: "Error al cambiar a Monad Testnet",
+        addStgMonFailed: "Error al agregar stgMON a Metamask",
+        close: "Cerrar",
+        language: "Idioma",
+        developedBy: "Desarrollado por ",
+        contractAddress: "Dirección del contrato",
+        welcomeMessage: "¡Bienvenido a Gus Stake! Por favor, firma para autenticar.",
+        walletConnected: "Billetera conectada con éxito",
+        transactionHistory: "Historial de Transacciones",
+        noTransactions: "No se encontraron transacciones",
+        stakeType: "Depósito",
+        unstakeType: "Retiro",
+        stakeConversion: "Recibirás: {amount} stgMON",
+        unstakeConversion: "Recibirás: {amount} MON",
+        cookieConsent: "Este sitio usa cookies para mejorar tu experiencia. ¿Aceptas?",
+        acceptCookies: "Aceptar",
+        declineCookies: "Rechazar"
+      },
+      ru: {
+        title: "Gus Stake",
+        connectWallet: "Подключить кошелек",
+        disconnectWallet: "Отключить кошелек",
+        connected: "Подключено: {address}",
+        monBalance: "{balance} MON",
+        stgMonBalance: "{balance} stgMON",
+        contractMonBalance: "TVL: {balance} MON",
+        stakeTitle: "Депозит",
+        stakePlaceholder: "Количество в MON",
+        stakeButton: "Сделать Депозит",
+        unstakeTitle: "Вывод",
+        unstakePlaceholder: "Количество в stgMON",
+        unstakeButton: "Сделать Вывод",
+        addStgMon: "Добавить stgMON в Metamask",
+        metamaskOnly: "Поддерживается только Metamask",
+        switchNetworkMessage: "Пожалуйста, переключитесь на Monad Testnet (Chain ID: 10143)",
+        installMetamask: "Пожалуйста, установите Metamask",
+        failedConnect: "Не удалось подключить кошелек",
+        failedSign: "Не удалось подписать сообщение",
+        failedContract: "Не удалось инициализировать контракт",
+        failedBalances: "Не удалось получить балансы",
+        invalidStake: "Недопустимая сумма депозита: введите число больше 0",
+        invalidStakeFormat: "Недопустимый формат: используйте только числа (например, 1.0)",
+        invalidUnstake: "Недопустимая сумма вывода: введите число больше 0",
+        insufficientMon: "У вас недостаточно MON для этого депозита",
+        insufficientStgMon: "У вас недостаточно stgMON для этого вывода",
+        stakeSuccess: "Депозит {amount} MON успешно выполнен",
+        unstakeSuccess: "Вывод {amount} stgMON успешно выполнен",
+        stakeFailed: "Транзакция депозита не удалась",
+        unstakeFailed: "Транзакция вывода не удалась",
+        addNetworkFailed: "Не удалось добавить Monad Testnet",
+        switchNetworkFailed: "Не удалось переключить на Monad Testnet",
+        addStgMonFailed: "Не удалось добавить stgMON в Metamask",
+        close: "Закрыть",
+        language: "Язык",
+        developedBy: "Разработано ",
+        contractAddress: "Адрес контракта",
+        welcomeMessage: "Добро пожаловать в Gus Stake! Пожалуйста, подпишите для аутентификации.",
+        walletConnected: "Кошелек успешно подключен",
+        transactionHistory: "История транзакций",
+        noTransactions: "Транзакции не найдены",
+        stakeType: "Депозит",
+        unstakeType: "Вывод",
+        stakeConversion: "Вы получите: {amount} stgMON",
+        unstakeConversion: "Вы получите: {amount} MON",
+        cookieConsent: "Этот сайт использует cookies для улучшения вашего опыта. Принимаете?",
+        acceptCookies: "Принять",
+        declineCookies: "Отклонить"
+      },
+      zh: {
+        title: "Gus Stake",
+        connectWallet: "连接钱包",
+        disconnectWallet: "断开钱包",
+        connected: "已连接: {address}",
+        monBalance: "{balance} MON",
+        stgMonBalance: "{balance} stgMON",
+        contractMonBalance: "TVL: {balance} MON",
+        stakeTitle: "存款",
+        stakePlaceholder: "MON 数量",
+        stakeButton: "存款",
+        unstakeTitle: "提款",
+        unstakePlaceholder: "stgMON 数量",
+        unstakeButton: "提款",
+        addStgMon: "将 stgMON 添加到 Metamask",
+        metamaskOnly: "仅支持 Metamask",
+        switchNetworkMessage: "请切换到 Monad 测试网 (Chain ID: 10143)",
+        installMetamask: "请安装 Metamask",
+        failedConnect: "连接钱包失败",
+        failedSign: "签名消息失败",
+        failedContract: "初始化合约失败",
+        failedBalances: "获取余额失败",
+        invalidStake: "存款数量无效：请输入大于0的数字",
+        invalidStakeFormat: "格式无效：仅使用数字（例如：1.0）",
+        invalidUnstake: "提款数量无效：请输入大于0的数字",
+        insufficientMon: "你的 MON 不足以进行此存款",
+        insufficientStgMon: "你的 stgMON 不足以进行此提款",
+        stakeSuccess: "成功存款 {amount} MON",
+        unstakeSuccess: "成功提款 {amount} stgMON",
+        stakeFailed: "存款交易失败",
+        unstakeFailed: "提款交易失败",
+        addNetworkFailed: "添加 Monad 测试网失败",
+        switchNetworkFailed: "切换到 Monad 测试网失败",
+        addStgMonFailed: "添加 stgMON 到 Metamask 失败",
+        close: "关闭",
+        language: "语言",
+        developedBy: "由 ",
+        contractAddress: "合约地址",
+        welcomeMessage: "欢迎体验 Gus Stake！请签名以进行身份验证。",
+        walletConnected: "钱包连接成功",
+        transactionHistory: "交易历史",
+        noTransactions: "未找到交易",
+        stakeType: "存款",
+        unstakeType: "提款",
+        stakeConversion: "您将收到：{amount} stgMON",
+        unstakeConversion: "您将收到：{amount} MON",
+        cookieConsent: "本网站使用 cookies 以提升您的使用体验。接受吗？",
+        acceptCookies: "接受",
+        declineCookies: "拒绝"
+      },
+      en: {
+        title: "Gus Stake",
+        connectWallet: "Connect Wallet",
+        disconnectWallet: "Disconnect Wallet",
+        connected: "Connected: {address}",
+        monBalance: "{balance} MON",
+        stgMonBalance: "{balance} stgMON",
+        contractMonBalance: "TVL: {balance} MON",
+        stakeTitle: "Deposit",
+        stakePlaceholder: "Amount in MON",
+        stakeButton: "Deposit",
+        unstakeTitle: "Withdraw",
+        unstakePlaceholder: "Amount in stgMON",
+        unstakeButton: "Withdraw",
+        addStgMon: "Add stgMON to Metamask",
+        metamaskOnly: "Only Metamask is supported",
+        switchNetworkMessage: "Please switch to Monad Testnet (Chain ID: 10143)",
+        installMetamask: "Please install Metamask",
+        failedConnect: "Failed to connect wallet",
+        failedSign: "Failed to sign message",
+        failedContract: "Failed to initialize contract",
+        failedBalances: "Failed to fetch balances",
+        invalidStake: "Invalid deposit amount: enter a number greater than 0",
+        invalidStakeFormat: "Invalid format: use only numbers (e.g., 1.0)",
+        invalidUnstake: "Invalid withdraw amount: enter a number greater than 0",
+        insufficientMon: "You don't have enough MON for this deposit",
+        insufficientStgMon: "You don't have enough stgMON for this withdrawal",
+        stakeSuccess: "Successfully deposited {amount} MON",
+        unstakeSuccess: "Successfully withdrawn {amount} stgMON",
+        stakeFailed: "Deposit transaction failed",
+        unstakeFailed: "Withdraw transaction failed",
+        addNetworkFailed: "Failed to add Monad Testnet",
+        switchNetworkFailed: "Failed to switch to Monad Testnet",
+        addStgMonFailed: "Failed to add stgMON to Metamask",
+        close: "Close",
+        language: "Language",
+        developedBy: "Developed by ",
+        contractAddress: "Contract Address",
+        welcomeMessage: "Welcome to Gus Stake! Please sign to authenticate.",
+        walletConnected: "Wallet connected successfully",
+        transactionHistory: "Transaction History",
+        noTransactions: "No transactions found",
+        stakeType: "Deposit",
+        unstakeType: "Withdraw",
+        stakeConversion: "You will receive: {amount} stgMON",
+        unstakeConversion: "You will receive: {amount} MON",
+        cookieConsent: "This site uses cookies to enhance your experience. Do you accept?",
+        acceptCookies: "Accept",
+        declineCookies: "Decline"
+      }
+    };
+
+    const Popup = ({ message, type, onClose, t }) => (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+        <div className={`p-6 rounded-lg shadow-lg max-w-md text-center ${type === 'error' ? 'popup-error' : 'popup-success'}`}>
+          <p className="text-white mb-4">{message}</p>
+          <button
+            onClick={onClose}
+            className="bg-white text-black px-4 py-2 rounded popup-button transition-colors"
+          >
+            {t.close}
+          </button>
+        </div>
+      </div>
+    );
+
+    const CookieConsentPopup = ({ t, onAccept, onDecline }) => (
+      <div className="fixed inset-x-0 bottom-0 max-w-full mx-auto bg-gradient-to-r from-purple-600 to-blue-400 p-6 text-white rounded-t-lg shadow-lg z-70">
+        <p className="text-sm mb-4 text-center">{t.cookieConsent}</p>
+        <div className="flex justify-center space-x-4">
+          <button onClick={onAccept} className="bg-white text-black px-4 py-2 rounded popup-button">{t.acceptCookies}</button>
+          <button onClick={onDecline} className="bg-gray-700 px-4 py-2 rounded popup-button">{t.declineCookies}</button>
+        </div>
+      </div>
+    );
+
+    const Loading = () => (
+      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-60">
+        <div className="spinner"></div>
+      </div>
+    );
+
+    const StableInput = memo(({ value, onChange, placeholder, id, name }) => {
+      const localRef = useRef(null);
+      console.log("StableInput rendered:", id);
+
+      useEffect(() => {
+        const input = localRef.current;
+        if (input) {
+          input.focus();
+        }
+      }, []);
+
+      const handleChange = useCallback((e) => {
+        const newValue = e.target.value;
+        if (/^\d*\.?\d*$/.test(newValue) || newValue === "") {
+          onChange(newValue);
+        }
+      }, [onChange]);
+
+      return (
+        <input
+          type="text"
+          id={id}
+          name={name}
+          ref={localRef}
+          value={value}
+          onChange={handleChange}
+          placeholder={placeholder}
+          className="w-full p-2 mb-2 bg-gray-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          autoComplete="off"
+        />
+      );
+    });
+
+    const StakeTab = memo(({ t, stakeAmount, setStakeAmount, monBalance, handleStake }) => {
+      const isStakeValid = useMemo(() => {
+        const parsedAmount = parseFloat(stakeAmount);
+        return (
+          stakeAmount !== "" &&
+          !isNaN(parsedAmount) &&
+          parsedAmount > 0 &&
+          parsedAmount <= parseFloat(monBalance) &&
+          /^\d*\.?\d+$/.test(stakeAmount)
+        );
+      }, [stakeAmount, monBalance]);
+
+      return (
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-2xl font-semibold">{t.stakeTitle}</h2>
+            <span className="text-sm text-white">
+              {t.monBalance.replace("{balance}", monBalance)}
+            </span>
+          </div>
+          <StableInput
+            value={stakeAmount}
+            onChange={setStakeAmount}
+            placeholder={t.stakePlaceholder}
+            id="stake-amount"
+            name="stake-amount"
+          />
+          {stakeAmount && (
+            <div className="w-full p-2 bg-gray-700 rounded text-white text-sm min-h-[1.5rem] leading-6">
+              {t.stakeConversion.replace("{amount}", parseFloat(stakeAmount).toFixed(3))}
+            </div>
+          )}
+          <button
+            onClick={handleStake}
+            className="w-full custom-button mt-2"
+            disabled={!isStakeValid}
+          >
+            {t.stakeButton}
+          </button>
+        </div>
+      );
+    });
+
+    const UnstakeTab = memo(({ t, unstakeAmount, setUnstakeAmount, stgMonBalance, handleUnstake }) => {
+      const isUnstakeValid = useMemo(() => {
+        const parsedAmount = parseFloat(unstakeAmount);
+        return (
+          unstakeAmount !== "" &&
+          !isNaN(parsedAmount) &&
+          parsedAmount > 0 &&
+          parsedAmount <= parseFloat(stgMonBalance) &&
+          /^\d*\.?\d+$/.test(unstakeAmount)
+        );
+      }, [unstakeAmount, stgMonBalance]);
+
+      return (
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-2xl font-semibold">{t.unstakeTitle}</h2>
+            <span className="text-sm text-white">
+              {t.stgMonBalance.replace("{balance}", stgMonBalance)}
+            </span>
+          </div>
+          <StableInput
+            value={unstakeAmount}
+            onChange={setUnstakeAmount}
+            placeholder={t.unstakePlaceholder}
+            id="unstake-amount"
+            name="unstake-amount"
+          />
+          {unstakeAmount && (
+            <div className="w-full p-2 bg-gray-700 rounded text-white text-sm min-h-[1.5rem] leading-6">
+              {t.unstakeConversion.replace("{amount}", parseFloat(unstakeAmount).toFixed(3))}
+            </div>
+          )}
+          <button
+            onClick={handleUnstake}
+            className="w-full custom-button mt-2"
+            disabled={!isUnstakeValid}
+          >
+            {t.unstakeButton}
+          </button>
+        </div>
+      );
+    });
+
+    const App = () => {
+      const [account, setAccount] = useState(null);
+      const [contract, setContract] = useState(null);
+      const [monBalance, setMonBalance] = useState("0.000");
+      const [stgMonBalance, setStgMonBalance] = useState("0.000");
+      const [contractMonBalance, setContractMonBalance] = useState("0.000");
+      const [stakeAmount, setStakeAmount] = useState("");
+      const [unstakeAmount, setUnstakeAmount] = useState("");
+      const [popup, setPopup] = useState({ show: false, message: "", type: "success" });
+      const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
+      const [language, setLanguage] = useState("pt");
+      const [isLoading, setIsLoading] = useState(false);
+      const [activeTab, setActiveTab] = useState("stake");
+      const [isWalletConfirmed, setIsWalletConfirmed] = useState(false);
+      const [transactionHistory, setTransactionHistory] = useState([]);
+      const [showCookieConsent, setShowCookieConsent] = useState(false);
+      const [cookiesAllowed, setCookiesAllowed] = useState(true);
+      const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+      const [isMenuOpen, setIsMenuOpen] = useState(false);
+      const t = translations[language];
+      const lastBalanceUpdate = useRef(0);
+      const debounceTimeout = useRef(null);
+
+      const formatTranslation = useCallback((key, params = {}) => {
+        let text = t[key] || key;
+        Object.keys(params).forEach(param => {
+          text = text.replace(`{${param}}`, params[param]);
+        });
+        return text;
+      }, [t]);
+
+      const formatBalance = useCallback((balance) => {
+        try {
+          return parseFloat(ethers.utils.formatEther(balance)).toFixed(3);
+        } catch (error) {
+          console.error("Error formatting balance:", error);
+          return "0.000";
+        }
+      }, []);
+
+      const formatTimestamp = useCallback((timestamp) => {
+        try {
+          const date = new Date(timestamp * 1000);
+          return date.toLocaleString();
+        } catch (error) {
+          console.error("Error formatting timestamp:", error);
+          return "N/A";
+        }
+      }, []);
+
+      const debounce = useCallback((func, delay) => {
+        return (...args) => {
+          if (debounceTimeout.current) {
+            clearTimeout(debounceTimeout.current);
+          }
+          debounceTimeout.current = setTimeout(() => {
+            func(...args);
+            debounceTimeout.current = null;
+          }, delay);
+        };
+      }, []);
+
+      const handleResize = useCallback(() => {
+        setIsMobile(window.innerWidth <= 768);
+      }, []);
+
+      useEffect(() => {
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+      }, [handleResize]);
+
+      useEffect(() => {
+        const consent = Cookies.get("gus_stake_cookie_consent");
+        if (!consent) {
+          setShowCookieConsent(true);
+        } else {
+          setCookiesAllowed(consent === "true");
+          if (consent === "true") {
+            const history = Cookies.get("gus_stake_history");
+            if (history) {
+              try {
+                setTransactionHistory(JSON.parse(history).slice(0, 10));
+              } catch (error) {
+                console.error("Error parsing history cookie:", error);
+              }
+            }
+          }
+        }
+      }, []);
+
+      const handleCookieAccept = useCallback(() => {
+        Cookies.set("gus_stake_cookie_consent", "true", { expires: 365 });
+        setCookiesAllowed(true);
+        setShowCookieConsent(false);
+      }, []);
+
+      const handleCookieDecline = useCallback(() => {
+        Cookies.set("gus_stake_cookie_consent", "false", { expires: 365 });
+        Cookies.remove("gus_stake_auth");
+        Cookies.remove("gus_stake_history");
+        setCookiesAllowed(false);
+        setShowCookieConsent(false);
+      }, []);
+
+      const switchNetwork = useCallback(async () => {
+        if (!window.ethereum) {
+          setPopup({ show: true, message: t.installMetamask, type: "error" });
+          return false;
+        }
+        try {
+          console.log("Attempting to switch to Monad Testnet...");
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: `0x${parseInt(MONAD_CHAIN_ID).toString(16)}` }],
+          });
+          console.log("Switched to Monad Testnet");
+          setIsCorrectNetwork(true);
+          return true;
+        } catch (switchError) {
+          console.error("Switch network error:", switchError);
+          if (switchError.code === 4902) {
+            try {
+              console.log("Adding Monad Testnet...");
+              await window.ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [{
+                  chainId: `0x${parseInt(MONAD_CHAIN_ID).toString(16)}`,
+                  chainName: "Monad Testnet",
+                  rpcUrls: [MONAD_RPC],
+                  nativeCurrency: {
+                    name: "MON",
+                    symbol: "MON",
+                    decimals: 18
+                  },
+                  blockExplorerUrls: ["https://explorer.testnet.monad.xyz"]
+                }],
+              });
+              console.log("Monad Testnet added");
+              setIsCorrectNetwork(true);
+              return true;
+            } catch (addError) {
+              console.error("Add network error:", addError);
+              setPopup({ show: true, message: t.addNetworkFailed, type: "error" });
+              return false;
+            }
+          } else {
+            setPopup({ show: true, message: t.switchNetworkFailed, type: "error" });
+            return false;
+          }
+        }
+      }, [t]);
+
+      const fetchTransactionHistory = useCallback(async (userAddress, provider) => {
+        if (!contract || !userAddress || !provider) {
+          console.log("Cannot fetch transaction history:", {
+            contract: !!contract,
+            userAddress,
+            provider: !!provider
+          });
+          return;
+        }
+        try {
+          console.log("Fetching transaction history for address:", userAddress);
+          const stakedFilter = contract.filters.Staked(userAddress);
+          const unstakedFilter = contract.filters.Unstaked(userAddress);
+          const stakedEvents = await contract.queryFilter(stakedFilter);
+          const unstakedEvents = await contract.queryFilter(unstakedFilter);
+
+          const transactions = [];
+
+          for (const event of stakedEvents) {
+            const block = await provider.getBlock(event.blockNumber);
+            transactions.push({
+              type: t.stakeType,
+              amount: `${formatBalance(event.args.monAmount)} MON`,
+              txHash: event.transactionHash,
+              timestamp: block.timestamp
+            });
+          }
+
+          for (const event of unstakedEvents) {
+            const block = await provider.getBlock(event.blockNumber);
+            transactions.push({
+              type: t.unstakeType,
+              amount: `${formatBalance(event.args.stgMonAmount)} stgMON`,
+              txHash: event.transactionHash,
+              timestamp: block.timestamp
+            });
+          }
+
+          transactions.sort((a, b) => b.timestamp - a.timestamp);
+          const limitedTransactions = transactions.slice(0, 10);
+          setTransactionHistory(limitedTransactions);
+          if (cookiesAllowed) {
+            Cookies.set("gus_stake_history", JSON.stringify(limitedTransactions), { expires: 30 });
+          }
+          console.log("Transaction history fetched:", limitedTransactions);
+        } catch (error) {
+          console.error("Error fetching transaction history:", error);
+        }
+      }, [contract, t, cookiesAllowed, formatBalance]);
+
+      const updateBalances = useCallback(async (userAddress, provider) => {
+        const now = Date.now();
+        if (now - lastBalanceUpdate.current < 5000) {
+          console.log("Skipping balance update: too soon");
+          return;
+        }
+        if (!isCorrectNetwork || !contract || !userAddress || !provider) {
+          console.log("Cannot update balances:", {
+            isCorrectNetwork,
+            contract: !!contract,
+            userAddress,
+            provider: !!provider
+          });
+          return;
+        }
+        try {
+          console.log("Fetching balances for address:", userAddress);
+          const stgMon = await contract.balanceOf(userAddress);
+          const stgMonFormatted = formatBalance(stgMon);
+          setStgMonBalance(stgMonFormatted);
+          console.log("stgMON balance:", stgMonFormatted);
+
+          const monBalance = await provider.getBalance(userAddress);
+          const monFormatted = formatBalance(monBalance);
+          setMonBalance(monFormatted);
+          console.log("MON balance:", monFormatted);
+
+          const contractBalance = await provider.getBalance(CONTRACT_ADDRESS);
+          const contractFormatted = formatBalance(contractBalance);
+          setContractMonBalance(contractFormatted);
+          console.log("Contract MON balance:", contractFormatted);
+
+          console.log("Balances updated successfully");
+          lastBalanceUpdate.current = now;
+        } catch (error) {
+          console.error("Error fetching balances:", error);
+          setTimeout(() => {
+            try {
+              console.log("Retrying balances for address:", userAddress);
+              const stgMon = contract.balanceOf(userAddress);
+              setStgMonBalance(formatBalance(stgMon));
+              const monBalance = provider.getBalance(userAddress);
+              setMonBalance(formatBalance(monBalance));
+              const contractBalance = provider.getBalance(CONTRACT_ADDRESS);
+              setContractMonBalance(formatBalance(contractBalance));
+              console.log("Balances retry successful");
+              lastBalanceUpdate.current = now;
+            } catch (retryError) {
+              console.error("Retry failed:", retryError);
+            }
+          }, 2000);
+        }
+      }, [isCorrectNetwork, contract, formatBalance]);
+
+      const debouncedUpdateBalances = useCallback(debounce(updateBalances, 1000), [updateBalances]);
+
+      useEffect(() => {
+        const init = async () => {
+          if (!window.ethereum) {
+            setPopup({ show: true, message: t.installMetamask, type: "error" });
+            return;
+          }
+          try {
+            const provider = new ethers.providers.Web3Provider(window.ethereum);
+            const network = await provider.getNetwork();
+            console.log("Initial network:", network.chainId);
+            if (network.chainId.toString() === MONAD_CHAIN_ID) {
+              setIsCorrectNetwork(true);
+            } else {
+              setIsCorrectNetwork(false);
+            }
+          } catch (error) {
+            console.error("Error initializing:", error);
+            setPopup({ show: true, message: t.failedContract, type: "error" });
+          }
+        };
+        init();
+      }, [t]);
+
+      useEffect(() => {
+        if (!window.ethereum) return;
+
+        const handleChainChanged = async (chainId) => {
+          console.log("Chain changed to:", chainId);
+          if (parseInt(chainId, 16).toString() === MONAD_CHAIN_ID) {
+            setIsCorrectNetwork(true);
+            if (account && !contract && isWalletConfirmed) {
+              console.log("Initializing contract after network change");
+              const provider = new ethers.providers.Web3Provider(window.ethereum);
+              const signer = provider.getSigner();
+              const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+              setContract(contractInstance);
+              debouncedUpdateBalances(account, provider);
+              fetchTransactionHistory(account, provider);
+            }
+          } else {
+            setIsCorrectNetwork(false);
+          }
+        };
+
+        const debouncedHandleChainChanged = debounce(handleChainChanged, 1000);
+
+        window.ethereum.on("chainChanged", debouncedHandleChainChanged);
+
+        return () => {
+          window.ethereum.removeListener("chainChanged", debouncedHandleChainChanged);
+        };
+      }, [account, contract, isWalletConfirmed, debouncedUpdateBalances, fetchTransactionHistory]);
+
+      const connectWallet = useCallback(async () => {
+        if (window.ethereum) {
+          setIsLoading(true);
+          try {
+            console.log("Connecting wallet...");
+            const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+            const provider = new ethers.providers.Web3Provider(window.ethereum);
+            const network = await provider.getNetwork();
+            console.log("Current network:", network.chainId);
+            if (network.chainId.toString() !== MONAD_CHAIN_ID) {
+              const switched = await switchNetwork();
+              if (!switched) {
+                console.log("Network switch failed, aborting connection");
+                setIsLoading(false);
+                return;
+              }
+            }
+            const signer = provider.getSigner();
+            let skipSignature = false;
+            if (cookiesAllowed) {
+              const authCookie = Cookies.get("gus_stake_auth");
+              if (authCookie) {
+                try {
+                  const { address, expiry } = JSON.parse(authCookie);
+                  if (address === accounts[0] && expiry > Date.now()) {
+                    console.log("Valid auth cookie found, skipping signature");
+                    skipSignature = true;
+                  }
+                } catch (error) {
+                  console.error("Error parsing auth cookie:", error);
+                }
+              }
+            }
+            if (!skipSignature) {
+              await signer.signMessage(formatTranslation("welcomeMessage"));
+              if (cookiesAllowed) {
+                Cookies.set(
+                  "gus_stake_auth",
+                  JSON.stringify({ address: accounts[0], expiry: Date.now() + 24 * 60 * 60 * 1000 }),
+                  { expires: 1 }
+                );
+              }
+            }
+            setAccount(accounts[0]);
+            setIsCorrectNetwork(true);
+            const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+            setContract(contractInstance);
+            console.log("Contract initialized, waiting for user confirmation...");
+            setPopup({ show: true, message: t.walletConnected, type: "success" });
+          } catch (error) {
+            console.error("Connect wallet error:", error);
+            setPopup({ show: true, message: error.code === -32002 ? t.failedSign : t.failedConnect, type: "error" });
+          } finally {
+            setIsLoading(false);
+          }
+        } else {
+          setPopup({ show: true, message: t.installMetamask, type: "error" });
+        }
+      }, [t, switchNetwork, cookiesAllowed, formatTranslation]);
+
+      const handlePopupClose = useCallback(() => {
+        if (popup.type === "success" && account && contract) {
+          console.log("User confirmed wallet connection, fetching balances and history...");
+          setIsWalletConfirmed(true);
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          debouncedUpdateBalances(account, provider);
+          fetchTransactionHistory(account, provider);
+        }
+        setPopup({ show: false, message: "", type: "success" });
+      }, [popup.type, account, contract, debouncedUpdateBalances, fetchTransactionHistory]);
+
+      const disconnectWallet = useCallback(() => {
+        console.log("Disconnecting wallet...");
+        setAccount(null);
+        setMonBalance("0.000");
+        setStgMonBalance("0.000");
+        setContractMonBalance("0.000");
+        setContract(null);
+        setIsCorrectNetwork(false);
+        setIsWalletConfirmed(false);
+        setTransactionHistory([]);
+        if (cookiesAllowed) {
+          Cookies.remove("gus_stake_auth");
+          Cookies.remove("gus_stake_history");
+        }
+      }, [cookiesAllowed]);
+
+      const handleStake = useCallback(async () => {
+        const parsedAmount = parseFloat(stakeAmount);
+        console.log("Stake Amount:", stakeAmount, "Parsed:", parsedAmount);
+        if (!contract) {
+          setPopup({ show: true, message: t.failedContract, type: "error" });
+          return;
+        }
+        if (!stakeAmount || isNaN(parsedAmount) || !/^\d*\.?\d+$/.test(stakeAmount)) {
+          setPopup({ show: true, message: t.invalidStakeFormat, type: "error" });
+          return;
+        }
+        if (parsedAmount <= 0) {
+          setPopup({ show: true, message: t.invalidStake, type: "error" });
+          return;
+        }
+        if (parsedAmount > parseFloat(monBalance)) {
+          setPopup({ show: true, message: t.insufficientMon, type: "error" });
+          return;
+        }
+        try {
+          const tx = await contract.stake({
+            value: ethers.utils.parseEther(stakeAmount),
+          });
+          const receipt = await tx.wait();
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const block = await provider.getBlock(receipt.blockNumber);
+          setPopup({ show: true, message: formatTranslation("stakeSuccess", { amount: stakeAmount }), type: "success" });
+          setStakeAmount("");
+          await debouncedUpdateBalances(account, provider);
+          setTransactionHistory(prev => {
+            const newHistory = [
+              {
+                type: t.stakeType,
+                amount: `${parseFloat(stakeAmount).toFixed(3)} MON`,
+                txHash: receipt.transactionHash,
+                timestamp: block.timestamp
+              },
+              ...prev.slice(0, 9)
+            ];
+            if (cookiesAllowed) {
+              Cookies.set("gus_stake_history", JSON.stringify(newHistory), { expires: 30 });
+            }
+            return newHistory;
+          });
+        } catch (error) {
+          console.error("Stake Error:", error);
+          setPopup({ show: true, message: t.stakeFailed, type: "error" });
+        }
+      }, [contract, stakeAmount, monBalance, t, formatTranslation, account, debouncedUpdateBalances, cookiesAllowed]);
+
+      const handleUnstake = useCallback(async () => {
+        const parsedAmount = parseFloat(unstakeAmount);
+        if (!contract) {
+          setPopup({ show: true, message: t.failedContract, type: "error" });
+          return;
+        }
+        if (!unstakeAmount || isNaN(parsedAmount) || !/^\d*\.?\d+$/.test(unstakeAmount)) {
+          setPopup({ show: true, message: t.invalidStakeFormat, type: "error" });
+          return;
+        }
+        if (parsedAmount <= 0) {
+          setPopup({ show: true, message: t.invalidUnstake, type: "error" });
+          return;
+        }
+        if (parsedAmount > parseFloat(stgMonBalance)) {
+          setPopup({ show: true, message: t.insufficientStgMon, type: "error" });
+          return;
+        }
+        try {
+          const tx = await contract.unstake(ethers.utils.parseEther(unstakeAmount));
+          const receipt = await tx.wait();
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const block = await provider.getBlock(receipt.blockNumber);
+          setPopup({ show: true, message: formatTranslation("unstakeSuccess", { amount: unstakeAmount }), type: "success" });
+          setUnstakeAmount("");
+          await debouncedUpdateBalances(account, provider);
+          setTransactionHistory(prev => {
+            const newHistory = [
+              {
+                type: t.unstakeType,
+                amount: `${parseFloat(unstakeAmount).toFixed(3)} stgMON`,
+                txHash: receipt.transactionHash,
+                timestamp: block.timestamp
+              },
+              ...prev.slice(0, 9)
+            ];
+            if (cookiesAllowed) {
+              Cookies.set("gus_stake_history", JSON.stringify(newHistory), { expires: 30 });
+            }
+            return newHistory;
+          });
+        } catch (error) {
+          console.error("Unstake Error:", error);
+          setPopup({ show: true, message: t.unstakeFailed, type: "error" });
+        }
+      }, [contract, unstakeAmount, stgMonBalance, t, formatTranslation, account, debouncedUpdateBalances, cookiesAllowed]);
+
+      const addStgMonToMetamask = useCallback(async () => {
+        if (!window.ethereum) {
+          setPopup({ show: true, message: t.installMetamask, type: "error" });
+          return;
+        }
+        try {
+          await window.ethereum.request({
+            method: "wallet_watchAsset",
+            params: {
+              type: "ERC20",
+              options: {
+                address: CONTRACT_ADDRESS,
+                symbol: "stgMON",
+                decimals: 18,
+                image: ""
+              }
+            }
+          });
+          console.log("stgMON added to Metamask");
+        } catch (error) {
+          console.error("Error adding stgMON to Metamask:", error);
+          setPopup({ show: true, message: t.addStgMonFailed, type: "error" });
+        }
+      }, [t]);
+
+      const handleLanguageChange = useCallback((lang) => {
+        setLanguage(lang);
+      }, []);
+
+      const toggleMenu = useCallback(() => {
+        setIsMenuOpen(prev => !prev);
+      }, []);
+
+      const handleTabChange = useCallback((tab) => {
+        setActiveTab(tab);
+      }, []);
+
+      const stakeTabProps = useMemo(() => ({
+        t,
+        stakeAmount,
+        setStakeAmount,
+        monBalance,
+        handleStake
+      }), [t, stakeAmount, monBalance, handleStake]);
+
+      const unstakeTabProps = useMemo(() => ({
+        t,
+        unstakeAmount,
+        setUnstakeAmount,
+        stgMonBalance,
+        handleUnstake
+      }), [t, unstakeAmount, stgMonBalance, handleUnstake]);
+
+      const DesktopInterface = () => (
+        <div className="flex flex-col min-h-screen">
+          {account && (
+            <img
+              src="/MonadStake/images/logofull.png"
+              alt="Background Logo"
+              className="background-logo"
+            />
+          )}
+          <header className="bg-gray-800 p-4 shadow-lg">
+            <div className="max-w-4xl mx-auto flex justify-between items-center">
+              <img
+                src="/MonadStake/images/logocrop.png"
+                alt="Gus Stake Logo"
+                className="h-12 w-auto"
+              />
+              <nav className="flex items-center space-x-4">
+                {account ? (
+                  <button
+                    onClick={disconnectWallet}
+                    className="custom-button flex flex-col items-center"
+                  >
+                    <span className="text-sm">
+                      {`${account.slice(0, 6)}...${account.slice(-4)}`}
+                    </span>
+                    <span>{t.disconnectWallet}</span>
+                  </button>
+                ) : null}
+                <select
+                  value={language}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
+                  className="bg-gray-700 text-white p-2 rounded focus:outline-none"
+                >
+                  <option value="pt">Português (BR)</option>
+                  <option value="es">Español</option>
+                  <option value="ru">Русский</option>
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                </select>
+              </nav>
+            </div>
+          </header>
+
+          <main className="flex-grow max-w-2xl mx-auto p-6">
+            {!account ? (
+              <div className="flex flex-col items-center justify-center h-full">
+                <img
+                  src="/MonadStake/images/logofull.png"
+                  alt="Gus Stake Full Logo"
+                  className="w-64 h-auto mb-8"
+                />
+                <button
+                  onClick={connectWallet}
+                  className="custom-button text-lg"
+                >
+                  {t.connectWallet}
+                </button>
+                <p className="mt-4 text-grey-300 text-sm">{t.metamaskOnly}</p>
+              </div>
+            ) : !isCorrectNetwork ? (
+              <div className="text-center">
+                <p className="mb-4">{t.switchNetworkMessage}</p>
+                <button
+                  onClick={switchNetwork}
+                  className="custom-button"
+                >
+                  {t.connectWallet}
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="bg-gray-700 p-4 rounded-lg mb-4 text-center">
+                  <p>{formatTranslation("contractMonBalance", { balance: contractMonBalance })}</p>
+                </div>
+                <div className="bg-gray-800/90 p-6 rounded-lg shadow-lg mb-4">
+                  <div className="flex justify-center mb-4">
+                    <button
+                      onClick={() => handleTabChange("stake")}
+                      className={`tab-button mx-2 ${activeTab === "stake" ? "active" : "inactive"}`}
+                    >
+                      {t.stakeTitle}
+                    </button>
+                    <button
+                      onClick={() => handleTabChange("unstake")}
+                      className={`tab-button mx-2 ${activeTab === "unstake" ? "active" : "inactive"}`}
+                    >
+                      {t.unstakeTitle}
+                    </button>
+                  </div>
+                  <div className="tab-content">
+                    <div className={activeTab === "stake" ? "block" : "hidden"}>
+                      <StakeTab key="stake" {...stakeTabProps} />
+                    </div>
+                    <div className={activeTab === "unstake" ? "block" : "hidden"}>
+                      <UnstakeTab key="unstake" {...unstakeTabProps} />
+                    </div>
+                  </div>
+                  <button
+                    onClick={addStgMonToMetamask}
+                    className="w-full custom-button mt-4"
+                  >
+                    {t.addStgMon}
+                  </button>
+                </div>
+
+                <div className="bg-gray-700 p-6 rounded-lg shadow-lg">
+                  <h2 className="text-2xl font-semibold mb-4">{t.transactionHistory}</h2>
+                  {transactionHistory.length === 0 ? (
+                    <p className="text-center">{t.noTransactions}</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full table-auto">
+                        <thead>
+                          <tr className="text-left">
+                            <th className="p-2">{t.stakeType}/{t.unstakeType}</th>
+                            <th className="p-2">Quantidade</th>
+                            <th className="p-2">Data</th>
+                            <th className="p-2">Hash</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {transactionHistory.map((tx, index) => (
+                            <tr key={index} className="border-t border-gray-600">
+                              <td className="p-2">{tx.type}</td>
+                              <td className="p-2">{tx.amount}</td>
+                              <td className="p-2">{formatTimestamp(tx.timestamp)}</td>
+                              <td className="p-2">
+                                <a
+                                  href={`https://testnet.monadexplorer.com/tx/${tx.txHash}`}
+                                  className="text-blue-400 hover:underline"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {`${tx.txHash.slice(0, 6)}...${tx.txHash.slice(-4)}`}
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {popup.show && (
+              <Popup
+                message={popup.message}
+                type={popup.type}
+                onClose={handlePopupClose}
+                t={t}
+              />
+            )}
+            {isLoading && <Loading />}
+            {showCookieConsent && (
+              <CookieConsentPopup
+                t={t}
+                onAccept={handleCookieAccept}
+                onDecline={handleCookieDecline}
+              />
+            )}
+          </main>
+
+          <footer className="bg-gray-800 p-4 text-center">
+            <p>
+              {t.developedBy}
+              <a href="https://x.com/0xgustavo" className="text-blue-400 hover:underline">
+                x.com/0xgustavo
+              </a>
+            </p>
+            <p>
+              {t.contractAddress}{" "}
+              <a
+                href="https://testnet.monadexplorer.com/token/0x0E06F432eAA3978FE833Bb8BBcF1b6580F91BdaF"
+                className="text-blue-400 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {CONTRACT_ADDRESS.slice(0, 6)}...{CONTRACT_ADDRESS.slice(-4)}
+              </a>
+            </p>
+            <p>Gus Stake 2025</p>
+          </footer>
+        </div>
+      );
+
+      const MobileInterface = () => (
+        <div className="flex flex-col min-h-screen">
+          {account && (
+            <img
+              src="/MonadStake/images/logofull.png"
+              alt="Background Logo"
+              className="background-logo"
+            />
+          )}
+          <header className="bg-gray-800 p-2 shadow-lg">
+            <div className="max-w-full mx-auto flex justify-between items-center">
+              <img
+                src="/MonadStake/images/logocrop.png"
+                alt="Gus Stake Logo"
+                className="h-8 w-auto"
+              />
+              <button onClick={toggleMenu} className="text-white text-2xl">
+                {isMenuOpen ? "✕" : "☰"}
+              </button>
+            </div>
+            <div
+              className={`fixed top-0 right-0 h-full bg-gray-800 p-4 w-3/4 mobile-menu ${
+                isMenuOpen ? "open" : "closed"
+              }`}
+            >
+              <button onClick={toggleMenu} className="text-white text-2xl mb-4">✕</button>
+              <nav className="flex flex-col space-y-4">
+                {account ? (
+                  <button
+                    onClick={() => {
+                      disconnectWallet();
+                      toggleMenu();
+                    }}
+                    className="custom-button text-sm"
+                  >
+                    <span>{`${account.slice(0, 6)}...${account.slice(-4)}`}</span>
+                    <span>{t.disconnectWallet}</span>
+                  </button>
+                ) : null}
+                <select
+                  value={language}
+                  onChange={(e) => {
+                    handleLanguageChange(e.target.value);
+                    toggleMenu();
+                  }}
+                  className="bg-gray-700 text-white p-2 rounded focus:outline-none text-sm"
+                >
+                  <option value="pt">Português (BR)</option>
+                  <option value="es">Español</option>
+                  <option value="ru">Русский</option>
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                </select>
+              </nav>
+            </div>
+          </header>
+
+          <main className="flex-grow p-4">
+            {!account ? (
+              <div className="flex flex-col items-center justify-center h-full">
+                <img
+                  src="/MonadStake/images/logofull.png"
+                  alt="Gus Stake Full Logo"
+                  className="w-48 h-auto mb-4"
+                />
+                <button
+                  onClick={connectWallet}
+                  className="custom-button text-sm"
+                >
+                  {t.connectWallet}
+                </button>
+                <p className="mt-2 text-gray-300 text-xs">{t.metamaskOnly}</p>
+              </div>
+            ) : !isCorrectNetwork ? (
+              <div className="text-center">
+                <p className="mb-2 text-sm">{t.switchNetworkMessage}</p>
+                <button
+                  onClick={switchNetwork}
+                  className="custom-button text-sm"
+                >
+                  {t.connectWallet}
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="bg-gray-700 p-2 rounded-lg text-center">
+                  <p className="text-sm">{formatTranslation("contractMonBalance", { balance: contractMonBalance })}</p>
+                </div>
+                <div className="bg-gray-800/90 p-4 rounded-lg shadow-lg">
+                  <div className="flex flex-col mb-2">
+                    <button
+                      onClick={() => handleTabChange("stake")}
+                      className={`tab-button w-full mb-2 ${activeTab === "stake" ? "active" : "inactive"} text-sm`}
+                    >
+                      {t.stakeTitle}
+                    </button>
+                    <button
+                      onClick={() => handleTabChange("unstake")}
+                      className={`tab-button w-full ${activeTab === "unstake" ? "active" : "inactive"} text-sm`}
+                    >
+                      {t.unstakeTitle}
+                    </button>
+                  </div>
+                  <div className="tab-content">
+                    <div className={activeTab === "stake" ? "block" : "hidden"}>
+                      <StakeTab key="stake" {...stakeTabProps} />
+                    </div>
+                    <div className={activeTab === "unstake" ? "block" : "hidden"}>
+                      <UnstakeTab key="unstake" {...unstakeTabProps} />
+                    </div>
+                  </div>
+                  <button
+                    onClick={addStgMonToMetamask}
+                    className="w-full custom-button mt-2 text-sm"
+                  >
+                    {t.addStgMon}
+                  </button>
+                </div>
+
+                <div className="bg-gray-700 p-4 rounded-lg shadow-lg">
+                  <h2 className="text-lg font-semibold mb-2">{t.transactionHistory}</h2>
+                  {transactionHistory.length === 0 ? (
+                    <p className="text-center text-sm">{t.noTransactions}</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="text-left text-xs">
+                            <th className="p-1">{t.stakeType}/{t.unstakeType}</th>
+                            <th className="p-1">Quantidade</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {transactionHistory.map((tx, index) => (
+                            <tr key={index} className="border-t border-gray-600 flex flex-col p-1">
+                              <td className="p-1 text-xs">{tx.type}</td>
+                              <td className="p-1 text-xs">{tx.amount}</td>
+                              <td className="p-1 text-xs">
+                                {formatTimestamp(tx.timestamp)}
+                              </td>
+                              <td className="p-1 text-xs">
+                                <a
+                                  href={`https://testnet.monadexplorer.com/tx/${tx.txHash}`}
+                                  className="text-blue-300 hover:underline"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {`${tx.txHash.slice(0, 4)}...${tx.txHash.slice(-4)}`}
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {popup.show && (
+              <Popup
+                message={popup.message}
+                type={popup.type}
+                onClose={handlePopupClose}
+                t={t}
+              />
+            )}
+            {isLoading && <Loading />}
+            {showCookieConsent && (
+              <CookieConsentPopup
+                t={t}
+                onAccept={handleCookieAccept}
+                onDecline={handleCookieDecline}
+              />
+            )}
+          </main>
+
+          <footer className="bg-gray-800 p-2 text-center flex flex-col gap-1">
+            <p className="text-xs">
+              {t.developedBy}
+              <a href="https://x.com/0xgustavo" className="text-blue-300 hover:underline">
+                x.com/0xgustavo
+              </a>
+            </p>
+            <p className="text-xs">
+              {t.contractAddress}{" "}
+              <a
+                href="https://testnet.monadexplorer.com/token/0x0E06F432eAA3978FE833Bb8BBcF1b6580F91BdaF"
+                className="text-blue-300 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {CONTRACT_ADDRESS.slice(0, 6)}...{CONTRACT_ADDRESS.slice(-4)}
+              </a>
+            </p>
+            <p className="text-xs">Gus Stake 2025</p>
+          </footer>
+        </div>
+      );
+
+      return isMobile ? <MobileInterface /> : <DesktopInterface />;
+    };
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>
